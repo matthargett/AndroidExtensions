@@ -1,4 +1,5 @@
 #include <AndroidExtensions/Globals.h>
+#include <android/asset_manager_jni.h>
 #include <stdexcept>
 
 namespace android::global
@@ -8,6 +9,7 @@ namespace android::global
         JavaVM* g_javaVM{};
         jobject g_appContext{};
         jobject g_currentActivity{};
+        AAssetManager* g_assetManager{};
 
         thread_local struct Env final
         {
@@ -58,8 +60,25 @@ namespace android::global
 
     void Initialize(JavaVM* javaVM, jobject context)
     {
+        Initialize(javaVM, context, nullptr);
+    }
+
+    void Initialize(JavaVM* javaVM, jobject context, jobject assetManager)
+    {
         g_javaVM = javaVM;
-        g_appContext = GetEnvForCurrentThread()->NewGlobalRef(android::content::Context{context}.getApplicationContext());
+        JNIEnv* env = GetEnvForCurrentThread();
+        jobject applicationContext = android::content::Context{context}.getApplicationContext();
+        g_appContext = env->NewGlobalRef(applicationContext);
+
+        if (assetManager != nullptr)
+        {
+            SetAssetManager(assetManager);
+        }
+        else
+        {
+            auto assets = android::content::Context{context}.getAssets();
+            SetAssetManager(static_cast<jobject>(assets));
+        }
     }
 
     JNIEnv* GetEnvForCurrentThread()
@@ -126,5 +145,22 @@ namespace android::global
     RequestPermissionsResultEvent::Ticket AddRequestPermissionsResultCallback(RequestPermissionsResultEvent::Handler&& onAddRequestPermissionsResult)
     {
         return g_requestPermissionsResultEvent.AddHandler(std::move(onAddRequestPermissionsResult));
+    }
+
+    void SetAssetManager(jobject assetManager)
+    {
+        if (assetManager == nullptr)
+        {
+            g_assetManager = nullptr;
+            return;
+        }
+
+        JNIEnv* env = GetEnvForCurrentThread();
+        g_assetManager = AAssetManager_fromJava(env, assetManager);
+    }
+
+    AAssetManager* GetAssetManager()
+    {
+        return g_assetManager;
     }
 }
